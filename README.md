@@ -1,6 +1,6 @@
 # SellerStudio.ai
 
-Upload a product image and let our AI detect and extract the item. Choose from AI-generated mannequin or live-model templates, then get high-resolution mockups of your product worn by a model from multiple angles—ready for your online catalog.
+Upload a product image and let our AI detect and extract the item. Choose from AI-generated mannequin or live-model templates, then get high-resolution mockups of your product worn by a model from multiple angles ready for your online catalog.
 
 ## Development Checklist
 
@@ -9,17 +9,17 @@ Upload a product image and let our AI detect and extract the item. Choose from A
   - Create GitHub repo with README, `.gitignore` (Python) & license
   - Set up Python virtual environment and install core dependencies
 
-- [ ] **Object detection & extraction**
+- [x] **Object detection & extraction**
 
   - Integrate a detection model (e.g. YOLO, Detectron2)
   - Test segmentation masks on sample images
 
-- [ ] **Template generation**
+- [x] **Template generation**
 
   - Connect to Gemini 2.5 Pro API for mannequin/live-model renders
   - Build a small gallery of AI-generated model poses
 
-- [ ] **User interface**
+- [x] **User interface**
 
   - Design CLI or web UI for uploading, previewing & selecting templates
   - Implement file handling and preview thumbnails
