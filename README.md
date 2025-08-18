@@ -1,41 +1,57 @@
 # SellerStudio.ai
 
-Upload a product image and let our AI detect and extract the item. Choose from AI-generated mannequin or live-model templates, then get high-resolution mockups of your product worn by a model from multiple angles ready for your online catalog.
+**SellerStudio.ai** lets you instantly visualize your product worn by AI-generated fashion models — perfect for building clean, modern, high-conversion catalogs. Upload a garment image, and our AI will handle everything: automatic tagging, category selection, model generation, and realistic try-on rendering.
 
-## Development Checklist
+## 🧠 AI Models Used
 
-- [x] **Repo & environment**
+| Step                     | Model Used                | Purpose                                       |
+| ------------------------ | ------------------------- | --------------------------------------------- |
+| Product Tagging          | `gemini-1.5-flash`        | Extract comma-separated tags from image       |
+| Garment Categorization   | `gemini-1.5-flash`        | Predict single category slug                  |
+| Model Preview Generation | `imagen-3.0-generate-002` | Generate AI model poses with plain clothing   |
+| Try-On Compositing       | `gemini-2.0-flash-exp`    | Realistically drape garment onto chosen model |
 
-  - Create GitHub repo with README, `.gitignore` (Python) & license
-  - Set up Python virtual environment and install core dependencies
+---
 
-- [x] **Object detection & extraction**
+## 🚀 How It Works
 
-  - Integrate a detection model (e.g. YOLO, Detectron2)
-  - Test segmentation masks on sample images
+1. **Upload a Product Image**
 
-- [x] **Template generation**
+   - We extract the garment and describe it using Gemini Flash.
 
-  - Connect to Gemini 2.5 Pro API for mannequin/live-model renders
-  - Build a small gallery of AI-generated model poses
+2. **Classify the Product**
 
-- [x] **User interface**
+   - Automatically assigned a category like `dresses` or `footwear`.
 
-  - Design CLI or web UI for uploading, previewing & selecting templates
-  - Implement file handling and preview thumbnails
+3. **Generate Model Previews**
 
-- [ ] **Compositing engine**
+   - Imagen 3 creates a model gallery with neutral poses and consistent lighting.
 
-  - Overlay extracted product onto chosen template
-  - Render at least two distinct camera angles
+4. **Select a Model Template**
 
-- [ ] **Optimization & testing**
+   - You pick the best preview — front or angled.
 
-  - Enhance image quality (color match, lighting)
-  - Write unit tests for each module
-  - End-to-end integration tests
+5. **Composite the Final Output**
+   - Gemini Flash (2.0) composites the garment onto the selected model, preserving design fidelity and background realism.
 
-- [ ] **Deployment & docs**
-  - Containerize with Docker & define CI/CD pipeline
-  - Finalize README with usage examples and API keys guide
-  - Publish initial release on GitHub
+---
+
+## ✅ Development Checklist
+
+- [x] **Repo & Environment**
+  - GitHub repo, Python venv, dependencies
+- [x] **AI Classification Pipeline**
+  - Tagging + category classification with Gemini 1.5
+- [x] **Model Gallery Generator**
+  - Imagen 3 integration with pose prompts
+- [x] **User Interface**
+  - Streamlit web UI for upload, preview & try-on
+- [x] **Try-On Compositing**
+  - Gemini 2.0-based photorealistic render with full garment fidelity
+- [ ] **Optimization & Testing**
+  - Image cleanup, lighting consistency
+  - Unit & integration tests
+- [ ] **Deployment & Docs**
+  - Docker container, CI/CD
+  - Finalized documentation & API guide
+  - GitHub release

@@ -1,27 +1,23 @@
 import os
-import time
 from typing import List, Tuple, Optional
 
 from dotenv import load_dotenv
 from PIL import Image
 from io import BytesIO
 
-# Google GenAI SDK (Imagen 3)
 from google import genai
 from google.genai import types
 
-# Load environment variables
+import random
+
 load_dotenv()
 
-# Gemini API key for Imagen 3
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError("Please set the GEMINI_API_KEY environment variable in your .env")
 
-# Single client for vision/text calls
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Paths
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TEMP_DIR = os.path.abspath(os.path.join(ROOT_DIR, "temp"))
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -35,18 +31,32 @@ SUPPORTED_TRYON_CATEGORIES = {
     "accessories",
 }
 
+ETHNICITY_TONE_PROMPTS = [
+    "South Asian model with warm brown skin tone",
+    "East Asian model with light golden skin tone",
+    "Northern European model with cool porcelain skin tone",
+    "Eastern European model with fair neutral-beige skin tone",
+    "Western European model with light rosy skin tone",
+    "Southern European model with warm olive-beige skin tone",
+    "Mediterranean European model with sun-kissed bronze skin tone",
+    "African American model with rich espresso skin tone",
+    "Latino/Hispanic American model with golden tan skin tone",
+    "Pakistani model with warm medium-brown skin tone",
+]
+
+def _random_demographic(gender: str) -> Tuple[str, str]:
+    g = (gender or "").strip().lower()
+    if g not in {"male", "female"}:
+        g = "male"
+    desc = random.choice(ETHNICITY_TONE_PROMPTS)
+    return g, desc
+
 def _explode_labels(v: Optional[str]) -> List[str]:
     if not v:
         return []
     return [p.strip().lower() for p in v.split(",") if p.strip()]
 
-import base64
-
 def classify_product(image_path: str, max_retries: int = 3) -> List[str]:
-    """
-    Upload the image once, then ask the Flash model to extract fashion tags
-    directly from the image, skipping the separate vision-describe step.
-    """
     try:
         file_obj = client.files.upload(file=image_path)
         resp = client.models.generate_content(
@@ -102,100 +112,44 @@ def build_prompts(tags: List[str], category: str, view_hint: Optional[str] = Non
     view = f", {view_hint}" if view_hint else ""
 
     if category == "upper_body":
-        framing = f"shoulders-to-knees{view}"
+        framing = f"shoulders-to-waist{view}"
+        garment = "clean plain crewneck t-shirt (no logos), neutral mid-grey"
     elif category == "lower_body":
-        framing = f"hips-to-shoes crop{view}"
+        framing = f"hips-to-shoes{view}"
+        garment = "plain slim chinos (no logos), neutral charcoal"
     elif category == "dresses":
-        framing = f"full body crop{view}"
+        framing = f"knee-up{view}"
+        garment = "minimal solid-color dress, neutral grey"
     elif category == "footwear":
-        framing = f"feet-focused crop{view}, ground-in-frame"
+        framing = f"feet-focused close-up{view}, ground in frame"
+        garment = "ankle socks only (no shoes)"
     elif category == "headwear":
-        framing = f"head-and-shoulders crop{view}"
+        framing = f"head-and-shoulders{view}"
+        garment = "no hat"
     else:
-        framing = f"knee-up crop{view}"
+        framing = f"knee-up{view}"
+        garment = "simple neutral outfit"
 
     style_brief = (
-        "no specific gender"
-        "high-fashion editorial photoshoot, premium studio lighting, plain grey background, soft key light, crisp details, "
-        "rich natural colors, true-to-life color rendering, no monochrome, no black-and-white, "
-        "clean seamless backdrop"
-        "model ethnicity: indian, asian, or american, european, african, or latin american"
+        "studio fashion look, premium soft key light, plain medium-grey seamless backdrop, "
+        "true-to-life colors, crisp details, no monochrome"
     )
-    poses = (
-        "dynamic runway-inspired pose, subtle movement, relaxed hands, contrapposto, "
-        "fashion lookbook styling like H&M/Vogue"
-    )
+    poses = "relaxed lookbook pose, natural hands, fashion catalog quality"
 
-    if category == "upper_body":
-        garment = "a modern top"
-    elif category == "lower_body":
-        garment = "tailored bottoms"
-    elif category == "dresses":
-        garment = "a contemporary dress"
-    elif category == "footwear":
-        garment = "stylish shoes"
-    elif category == "headwear":
-        garment = "a contemporary hat"
-    else:
-        garment = "a contemporary outfit"
+    g_label, demo_desc = _random_demographic(gender)
 
     pos = (
-        f"full-color photo of a {gender} model wearing {garment}, {framing}, "
-        f"{style_brief}, {poses}, photorealistic, professional fashion catalog quality"
+        f"full-color photo of a {g_label} {demo_desc}, {framing}, wearing {garment}, "
+        f"{style_brief}, {poses}, photorealistic"
     )
-
     neg = (
-        "black-and-white, monochrome, sepia, color cast, low contrast, motion blur, watermark, logo, text, "
-        "overexposed, underexposed, clutter, busy background, duplicated limbs, distorted anatomy, extra fingers"
+        "logos, text, brand marks, stripes, patterns, busy background, color cast, harsh HDR, "
+        "underexposed, overexposed, motion blur, duplicated limbs, distorted anatomy"
     )
-
     return pos, neg
 
 def _to_imagen_prompt(pos: str, neg: str) -> str:
     return f"{pos}. Avoid: {neg}."
-
-def change_clothes_tryon(
-    person_img_path: str,
-    garment_img_path: str,
-    garment_desc: str,
-    category: str,
-    steps: int = 40,
-    seed: int = -1
-) -> Tuple[str, str]:
-    """Perform virtual try-on with two-image input via Imagen 3."""
-    try:
-        with open(person_img_path, "rb") as f:
-            person_bytes = f.read()
-        with open(garment_img_path, "rb") as f:
-            garment_bytes = f.read()
-
-        pos, neg = build_prompts([t for t in garment_desc.split(",")], category)
-        prompt = _to_imagen_prompt(pos, neg)
-
-        client_local = genai.Client(api_key=GEMINI_API_KEY)
-        cfg = types.GenerateImagesConfig(
-            number_of_images=1,
-            aspect_ratio="1:1",
-            output_mime_type="image/png",
-            person_generation="allow_adult"
-        )
-        response = client_local.models.generate_content([
-            types.content.ImageData(data=person_bytes),
-            types.content.ImageData(data=garment_bytes),
-            prompt
-        ], config=cfg)
-
-        imgs = getattr(response, "generated_images", None)
-        if not imgs:
-            raise RuntimeError("No images generated by Imagen 3")
-        img_data = imgs[0].image.image_bytes
-
-        out = os.path.join(TEMP_DIR, "final_tryon.png")
-        with open(out, "wb") as f:
-            f.write(img_data)
-        return out, ""
-    except Exception as e:
-        raise RuntimeError(f"Try-on failed: {e}")
 
 def generate_base_models_imagen3(
     tags: List[str],
@@ -238,13 +192,138 @@ def generate_studio_models(
     aspect_ratio: str = "1:1",
     sample_image_size: str = "1:K"
 ) -> List[str]:
-    """Alias to match your Streamlit import."""
     return generate_base_models_imagen3(
         tags=product_tags,
         num_images=num_options,
         forced_category=forced_category,
         aspect_ratio=aspect_ratio
     )
+
+def _build_tryon_instruction_prompt(garment_desc: str, category: str) -> str:
+    return (
+        "Virtual try-on compositing.\n"
+        "Image B = FIRST image (BASE/CANVAS): the person/model photo.\n"
+        "Image A = SECOND image (TOP/OVERLAY): the garment/product photo.\n"
+        "Task: Render Image B wearing the garment from Image A.\n"
+        f"Garment details: {garment_desc}. Category: {category}.\n"
+        "CRITICAL DESIGN FIDELITY from Image A: exact colors and ratios; stripe/block layout and stripe thickness; "
+        "graphics/prints/numbering text content and typography; logo placement and scale; collar type/color; "
+        "placket/button count and spacing; cuff/hem colors; seam/panel layout. Do not simplify or invent new graphics. "
+        "Preserve print placements (left chest, center front, etc.) and keep edges crisp.\n"
+        "HARD CONSTRAINTS from Image B: keep background, composition, framing/crop, camera angle, lens look, "
+        "pose, body shape, skin tone, hair, hands, and environment unchanged. "
+        "Do not change lighting or color grading; preserve Image B’s tonal range, white balance, shadow direction/softness, and contrast. "
+        "No background replacement or cleanup to white.\n"
+        "Fit realism: align prints with body perspective; maintain continuity across seams; realistic drape and stretch at shoulders/chest/sleeves; "
+        "natural wrinkles; no blur or washout of prints.\n"
+        "If any conflict arises, prioritize preserving the garment design from Image A while keeping pose/lighting/background from Image B.\n"
+        "If footwear, keep leg/foot pose and ground contact identical to Image B; match cast shadows; do not alter the floor/background.\n"
+        "Output one photorealistic image only. No added text, watermarks, borders, extra limbs, or artifacts."
+    )
+
+def _read_image_bytes(path: str) -> bytes:
+    with open(path, "rb") as f:
+        return f.read()
+
+def change_clothes_tryon_virtual_flash_preview(
+    person_img_path: str,
+    garment_img_path: str,
+    garment_desc: str,
+    category: str,
+    out_name: str = "final_tryon.png"
+) -> Tuple[str, str]:
+    try:
+        def sniff_mime(p: str) -> str:
+            ext = os.path.splitext(p)[1].lower()
+            if ext in [".jpg", ".jpeg"]:
+                return "image/jpeg"
+            return "image/png"
+
+        person_bytes = _read_image_bytes(person_img_path)
+        garment_bytes = _read_image_bytes(garment_img_path)
+        person_mime = sniff_mime(person_img_path)
+        garment_mime = sniff_mime(garment_img_path)
+
+        instruction = (
+            "Virtual try-on compositing.\n"
+            "Image B = FIRST image (BASE/CANVAS): the person/model photo.\n"
+            "Image A = SECOND image (TOP/OVERLAY): the garment/product photo.\n"
+            "Task: Render Image B wearing the garment from Image A.\n"
+            f"Garment details: {garment_desc}. Category: {category}.\n"
+            "CRITICAL DESIGN FIDELITY (must be preserved from Image A): "
+            "exact colors and color ratios, stripe/block layout and stripe thickness, "
+            "graphics/prints/numbering text content and typography, logo placement and scale, "
+            "collar type and color, placket/button count and spacing, cuff/hem colors, seams and panels. "
+            "Do not simplify patterns, do not shift print positions, and do not invent new graphics.\n"
+            "HARD CONSTRAINTS from Image B: background, composition, framing/crop, camera angle, "
+            "lens look, pose, body shape, skin tone, hair, hands, and environment. "
+            "Lighting and color grading must match Image B exactly: same tonal range, white balance, "
+            "shadow direction/softness, and contrast. No background replacement.\n"
+            "Fit: align stripes/prints with the body perspective; maintain continuity across seams; "
+            "realistic drape and stretch/compression at shoulders, chest, and sleeves; natural wrinkles; "
+            "do not blur or wash out prints; keep edges crisp.\n"
+            "If any conflict arises, prioritize preserving the garment’s design (from Image A) while keeping "
+            "pose/lighting/background from Image B.\n"
+            "If footwear, keep leg/foot pose and ground contact identical to Image B; match cast shadows; "
+            "do not alter the floor/background.\n"
+            "Output one photorealistic image only. no borders, extra limbs, or artifacts."
+        )
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=instruction),
+                    types.Part.from_bytes(mime_type=person_mime, data=person_bytes),
+                    types.Part.from_bytes(mime_type=garment_mime, data=garment_bytes),
+                ],
+            )
+        ]
+
+        generate_content_config = types.GenerateContentConfig(
+            response_modalities=["IMAGE", "TEXT"]
+        )
+
+        model_name = "gemini-2.0-flash-exp"
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=generate_content_config,
+        )
+
+        image_bytes = None
+        if getattr(response, "candidates", None):
+            for cand in response.candidates:
+                for p in getattr(cand.content, "parts", []) or []:
+                    inline = getattr(p, "inline_data", None)
+                    if inline and getattr(inline, "data", None):
+                        image_bytes = inline.data
+                        break
+                if image_bytes:
+                    break
+
+        if not image_bytes:
+            debug_text = getattr(response, "text", "") or "No image returned by the model."
+            raise RuntimeError(debug_text)
+
+        out_path = os.path.join(TEMP_DIR, out_name)
+        with open(out_path, "wb") as f:
+            f.write(image_bytes)
+        return out_path, ""
+
+    except Exception as e:
+        return "", f"Virtual try-on failed: {e}"
+
+def change_clothes_tryon(
+    person_img_path: str,
+    garment_img_path: str,
+    garment_desc: str,
+    category: str,
+    steps: int = 40,
+    seed: int = -1
+) -> Tuple[str, str]:
+    return "", "Legacy Imagen 3 try-on is disabled."
 
 def run_tryon_with_selected_model(
     selected_model_img_path: str,
@@ -253,31 +332,27 @@ def run_tryon_with_selected_model(
     forced_category: Optional[str] = None,
     steps: int = 40
 ) -> Optional[str]:
-    """Wraps change_clothes_tryon and returns the final image path."""
     try:
         cat = forced_category or infer_category(product_tags)
         if not is_tryon_supported(cat):
             return None
         desc = _garment_desc_from_tags(product_tags)
-        path, _ = change_clothes_tryon(
+        out_path, err = change_clothes_tryon_virtual_flash_preview(
             person_img_path=selected_model_img_path,
             garment_img_path=product_image_path,
             garment_desc=desc,
             category=cat,
-            steps=steps
+            out_name="final_tryon.png",
         )
-        return path
+        if err:
+            print(f"[ERROR] run_tryon (Flash Preview) failed: {err}")
+            return None
+        return out_path
     except Exception as e:
         print(f"[ERROR] run_tryon failed: {e}")
         return None
 
-# Flash-based category classifier
 def classify_category_with_flash(image_path: str) -> Optional[str]:
-    """
-    Use gemini-1.5-flash to classify the uploaded image into one of:
-    ['upper_body','lower_body','dresses','footwear','headwear'].
-    Returns the slug (e.g., 'upper_body') or None on failure.
-    """
     CATEGORIES = ["upper_body", "lower_body", "dresses", "footwear", "headwear"]
     try:
         file_obj = client.files.upload(file=image_path)
@@ -299,7 +374,7 @@ def classify_category_with_flash(image_path: str) -> Optional[str]:
         text = (getattr(resp, "text", "") or "").strip().lower()
         if text in CATEGORIES:
             return text
-        text = text.replace(".", "").replace("\n", "").strip()
+        text = text.replace(".", "").replace("\\n", "").strip()
         if text in CATEGORIES:
             return text
         alias_map = {
